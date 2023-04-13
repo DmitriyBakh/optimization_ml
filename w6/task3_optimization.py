@@ -92,7 +92,78 @@ def barrier_method_lasso(A, b, reg_coef, x_0, u_0, tolerance=1e-5,
             - history['x'] : list of np.arrays, containing the trajectory of the algorithm. ONLY STORE IF x.size <= 2
     """
     # TODO: implement.
-    raise NotImplementedError
+    # raise NotImplementedError
+    def phi(t, x, u, A, b):
+        Ax_b = A.dot(x) - b
+        return t * (0.5 * np.linalg.norm(Ax_b) ** 2 + reg_coef * np.sum(u)) - np.sum(np.log(u + x) + np.log(u - x))
+
+    def grad_phi(t, x, u, A, b):
+        Ax_b = A.dot(x) - b
+        ATAx_b = A.T.dot(Ax_b)
+        return t * (ATAx_b + reg_coef * np.sign(u)) + (1 / (u + x) - 1 / (u - x))
+
+    def hessian_phi(t, x, u, A, b):
+        AT_A = A.T.dot(A)
+        return t * AT_A + np.diag(1 / ((u + x) * (u - x)))
+
+    def backtracking_line_search(t, x, u, A, b, descent_dir, c1=0.01, max_iter_inner=100):
+        alpha = 1
+        x_size = len(x)
+
+        for _ in range(max_iter_inner):
+            x_new = x - alpha * descent_dir[:x_size]
+            u_new = u - alpha * descent_dir[x_size:]
+
+            if np.min(u_new) > 0 and phi(t, x_new, u_new, A, b) <= phi(t, x, u, A, b) + c1 * alpha * np.dot(grad_phi(t, x, u, A, b), -descent_dir):
+                break
+            else:
+                alpha *= 0.5
+        return alpha
+
+    if trace:
+        history = defaultdict(list)
+
+    x = x_0.copy()
+    u = u_0.copy()
+    t = t_0
+
+    for k in range(max_iter):
+        start_time = time()
+        for _ in range(max_iter_inner):
+            grad = grad_phi(t, x, u, A, b)
+            hessian = hessian_phi(t, x, u, A, b)
+            try:
+                descent_dir = -solve(hessian, grad)
+            except np.linalg.LinAlgError:
+                return x, u, 'computational_error', history if trace else None
+            if norm(descent_dir) ** 2 <= tolerance_inner * norm(grad) ** 2:
+                break
+            step_size = backtracking_line_search(t, x, u, A, b, descent_dir, c1, max_iter_inner)
+            x -= step_size * descent_dir[:x.size]
+            u -= step_size * descent_dir[x.size:]
+        
+        Ax_b = A.dot(x) - b
+        ATAx_b = A.T.dot(Ax_b)
+        if lasso_duality_gap:
+            duality_gap = lasso_duality_gap(x, Ax_b, ATAx_b, b, reg_coef)
+            if trace:
+                history['duality_gap'].append(duality_gap)
+            if duality_gap <= tolerance:
+                return x, u, 'success', history if trace else None
+        
+        if trace:
+            history['time'].append(time() - start_time)
+            history['func'].append(0.5 * np.linalg.norm(Ax_b) ** 2 + reg_coef * np.sum(u))
+            if x.size <= 2:
+                history
+
+            history['x'].append(x.copy())
+
+        if display:
+            print(f'Iteration {k + 1}: Duality gap = {duality_gap}')
+
+        t *= gamma
+    return x, u, 'iterations_exceeded', history if trace else None
 
 
 def lasso_duality_gap(x, Ax_b, ATAx_b, b, regcoef):
@@ -101,4 +172,19 @@ def lasso_duality_gap(x, Ax_b, ATAx_b, b, regcoef):
         f(x) := 0.5 * ||Ax - b||_2^2 + regcoef * ||x||_1.
     """
     # TODO: implement.
-    raise NotImplementedError
+    # raise NotImplementedError
+    # n = len(x)
+    # dual_scale = np.dot(Ax_b, b) / (regcoef * n)
+    
+    # if dual_scale < 0:
+    #     dual_scale = 0
+    
+    # y = dual_scale * Ax_b
+    # primal = 0.5 * np.dot(Ax_b, Ax_b) + regcoef * np.sum(np.abs(x))
+    # dual = 0.5 * np.dot(y - b, y - b)
+    
+    # return primal - dual
+
+    f = 0.5 * Ax_b @ Ax_b + regcoef * np.sum(x)
+    mu = np.min([1, regcoef / np.max(np.abs(ATAx_b))]) * Ax_b
+    return f + 0.5 * mu @ mu + b @ mu    
