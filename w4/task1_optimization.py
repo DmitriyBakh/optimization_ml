@@ -282,7 +282,7 @@ def newton(oracle, x_0, tolerance=1e-5, max_iter=100,
             return x_k, 'newton_direction_error', history
 
         alpha = line_search_tool.line_search(oracle, x_k, d_k)
-        x_k += alpha * d_k
+        x_k = x_k + alpha * d_k
         it += 1
 
         history = update_history(trace, display, history, oracle, time.time() - start_time, x_k, it)
