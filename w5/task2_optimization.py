@@ -195,7 +195,7 @@ def gradient_descent(oracle, x_0, tolerance=1e-5, max_iter=10000,
 
 
     it = 0
-    start_time = time.time()
+    start_time = time()
     history = update_history(trace, display, history, oracle, 0, x_k, it)
     grad_0 = oracle.grad(x_0)
 
@@ -210,7 +210,7 @@ def gradient_descent(oracle, x_0, tolerance=1e-5, max_iter=10000,
         # x_k += alpha * d_k
         x_k = x_k + alpha * d_k
 
-        history = update_history(trace, display, history, oracle, time.time() - start_time, x_k, it)
+        history = update_history(trace, display, history, oracle, time() - start_time, x_k, it)
 
         if (None in x_k) or (x_k > 10 ** 9).any():
             return x_k, 'computational_error', history
@@ -276,7 +276,7 @@ def newton(oracle, x_0, tolerance=1e-5, max_iter=100,
     x_k = np.copy(x_0)
 
     it = 0
-    start_time = time.time()
+    start_time = time()
     history = update_history(trace, display, history, oracle, 0, x_k, it)
     grad_0 = oracle.grad(x_0)
 
@@ -295,7 +295,7 @@ def newton(oracle, x_0, tolerance=1e-5, max_iter=100,
         x_k = x_k + alpha * d_k
         it += 1
 
-        history = update_history(trace, display, history, oracle, time.time() - start_time, x_k, it)
+        history = update_history(trace, display, history, oracle, time() - start_time, x_k, it)
 
         if (None in x_k) or (x_k > 10 ** 9).any():
             return x_k, 'computational_error', history
