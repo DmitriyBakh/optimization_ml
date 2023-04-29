@@ -183,6 +183,7 @@ def gradient_descent(oracle, x_0, tolerance=1e-5, max_iter=10000,
     line_search_tool = get_line_search_tool(line_search_options)
     x_k = np.copy(x_0)
 
+
     it = 0
     start_time = time.time()
     history = update_history(trace, display, history, oracle, 0, x_k, it)
@@ -196,7 +197,8 @@ def gradient_descent(oracle, x_0, tolerance=1e-5, max_iter=10000,
         it += 1
         d_k = -grad_k
         alpha = line_search_tool.line_search(oracle, x_k, d_k)
-        x_k += alpha * d_k
+        # x_k += alpha * d_k
+        x_k = x_k + alpha * d_k
 
         history = update_history(trace, display, history, oracle, time.time() - start_time, x_k, it)
 
