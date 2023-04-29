@@ -126,121 +126,98 @@ def get_line_search_tool(line_search_options=None):
         return LineSearchTool()
 
 
-def lbfgs(oracle, x_0, tolerance=1e-4, max_iter=500, memory_size=10,
-          line_search_options=None, display=False, trace=False):
+def update_history(trace, display, history, oracle, time, x_k, i):
+    if display:
+        print("Iteration ", i, ": x_k = ", x_k, sep='')
+    if trace:
+        history['time'].append(time)
+        history['func'].append(oracle.func(x_k))
+        history['grad_norm'].append(np.linalg.norm(oracle.grad(x_k)))
+        if len(x_k) <= 2:
+            history['x'].append(np.copy(x_k))
+    return history
+
+
+def gradient_descent(oracle, x_0, tolerance=1e-5, max_iter=10000,
+                     line_search_options=None, trace=False, display=False):
     """
-    Limited-memory BroydenвЂ“FletcherвЂ“GoldfarbвЂ“Shanno's method for optimization.
+    Gradien descent optimization method.
 
     Parameters
     ----------
     oracle : BaseSmoothOracle-descendant object
-        Oracle with .func() and .grad() methods implemented for computing
-        function value and its gradient respectively.
-    x_0 : 1-dimensional np.array
-        Starting point of the algorithm
+        Oracle with .func(), .grad() and .hess() methods implemented for computing
+        function value, its gradient and Hessian respectively.
+    x_0 : np.array
+        Starting point for optimization algorithm
     tolerance : float
         Epsilon value for stopping criterion.
     max_iter : int
         Maximum number of iterations.
-    memory_size : int
-        The length of directions history in L-BFGS method.
     line_search_options : dict, LineSearchTool or None
         Dictionary with line search options. See LineSearchTool class for details.
-    display : bool
-        If True, debug information is displayed during optimization.
-        Printing format is up to a student and is not checked in any way.
-    trace:  bool
+    trace : bool
         If True, the progress information is appended into history dictionary during training.
         Otherwise None is returned instead of history.
+    display : bool
+        If True, debug information is displayed during optimization.
+        Printing format and is up to a student and is not checked in any way.
 
     Returns
     -------
     x_star : np.array
         The point found by the optimization procedure
     message : string
-        'success' or the description of error:
+        "success" or the description of error:
             - 'iterations_exceeded': if after max_iter iterations of the method x_k still doesn't satisfy
-              the stopping criterion.
+                the stopping criterion.
+            - 'computational_error': in case of getting Infinity or None value during the computations.
     history : dictionary of lists or None
         Dictionary containing the progress information or None if trace=False.
         Dictionary has to be organized as follows:
-            - history['func'] : list of function values f(x_k) on every step of the algorithm
             - history['time'] : list of floats, containing time in seconds passed from the start of the method
+            - history['func'] : list of function values f(x_k) on every step of the algorithm
             - history['grad_norm'] : list of values Euclidian norms ||g(x_k)|| of the gradient
                 on every step of the algorithm
             - history['x'] : list of np.arrays, containing the trajectory of the algorithm. ONLY STORE IF x.size <= 2
+
+    Example:
+    --------
+    >> oracle = QuadraticOracle(np.eye(5), np.arange(5))
+    >> line_search_options = {'method': 'Armijo', 'c1': 1e-4}
+    >> x_opt, message, history = gradient_descent(oracle, np.zeros(5), line_search_options=line_search_options)
+    >> print('Found optimal point: {}'.format(x_opt))
+       Found optimal point: [ 0.  1.  2.  3.  4.]
     """
     history = defaultdict(list) if trace else None
     line_search_tool = get_line_search_tool(line_search_options)
     x_k = np.copy(x_0)
 
-    # TODO: Implement L-BFGS method.
-    # Use line_search_tool.line_search() for adaptive step size.
-    def update_history():
-        if not trace:
-            return
-        history['func'].append(oracle.func(x_k))
-        history['time'].append((datetime.now() - t_0).seconds)
-        history['grad_norm'].append(grad_k_norm)
-        if x_len <= 2:
-            history['x'].append(np.copy(x_k))
 
-    def show_display():
-        if not display:
-            return
-        if len(x_k) <= 4:
-            print('x = {}, '.format(np.round(x_k, 4)), end='')
-        print('func= {}, grad_norm = {}'.format(np.round(oracle.func(x_k), 4), np.round(grad_k_norm, 4)))
+    it = 0
+    start_time = time.time()
+    history = update_history(trace, display, history, oracle, 0, x_k, it)
+    grad_0 = oracle.grad(x_0)
 
-    t_0 = datetime.now()
-    x_len = len(x_k)
-    message = 'success'
+    while True:
+        grad_k = oracle.grad(x_k)
+        if np.linalg.norm(grad_k) ** 2 <= tolerance * np.linalg.norm(grad_0) ** 2:
+            return x_k, 'success', history
 
-    grad_k = oracle.grad(x_k)
-    grad_0_norm = grad_k_norm = np.linalg.norm(grad_k)
+        it += 1
+        d_k = -grad_k
+        alpha = line_search_tool.line_search(oracle, x_k, d_k)
+        # x_k += alpha * d_k
+        x_k = x_k + alpha * d_k
 
-    def bfgs_multiply(v, H, gamma_0):
-        if len(H) == 0:
-            return gamma_0 * v
-        s, y = H[-1]
-        H = H[:-1]
-        v_new = v - (s @ v) / (y @ s) * y
-        z = bfgs_multiply(v_new, H, gamma_0)
-        result = z + (s @ v - y @ z) / (y @ s) * s
-        return result
+        history = update_history(trace, display, history, oracle, time.time() - start_time, x_k, it)
 
-    def bfgs_direction():
-        if len(H) == 0:
-            return -grad_k
-        s, y = H[-1]
-        gamma_0 = (y @ s) / (y @ y)
-        return bfgs_multiply(-grad_k, H, gamma_0)
+        if (None in x_k) or (x_k > 10 ** 9).any():
+            return x_k, 'computational_error', history
 
-    H = []
-    for k in range(max_iter):
-        show_display()
-        update_history()
-
-        d = bfgs_direction()
-        alpha = line_search_tool.line_search(oracle, x_k, d)
-        x_new = x_k + alpha * d
-        grad_new = oracle.grad(x_new)
-        H.append((x_new - x_k, grad_new - grad_k))
-        if len(H) > memory_size:
-            H = H[1:]
-        x_k, grad_k = x_new, grad_new
-        grad_k_norm = np.linalg.norm(grad_k)
-        if grad_k_norm ** 2 < tolerance * grad_0_norm ** 2:
-            break
-
-    show_display()
-    update_history()
-
-    if not grad_k_norm ** 2 < tolerance * grad_0_norm ** 2:
-        message = 'iterations_exceeded'
-
-    return x_k, message, history
-
+        if it > max_iter:
+            return x_k, 'iterations_exceeded', history
+        
 
 def newton(oracle, x_0, tolerance=1e-5, max_iter=100,
            line_search_options=None, trace=False, display=False):
@@ -325,6 +302,122 @@ def newton(oracle, x_0, tolerance=1e-5, max_iter=100,
 
         if it > max_iter:
             return x_k, 'iterations_exceeded', history
+
+
+def lbfgs(oracle, x_0, tolerance=1e-4, max_iter=500, memory_size=10,
+          line_search_options=None, display=False, trace=False):
+    """
+    Limited-memory BroydenвЂ“FletcherвЂ“GoldfarbвЂ“Shanno's method for optimization.
+
+    Parameters
+    ----------
+    oracle : BaseSmoothOracle-descendant object
+        Oracle with .func() and .grad() methods implemented for computing
+        function value and its gradient respectively.
+    x_0 : 1-dimensional np.array
+        Starting point of the algorithm
+    tolerance : float
+        Epsilon value for stopping criterion.
+    max_iter : int
+        Maximum number of iterations.
+    memory_size : int
+        The length of directions history in L-BFGS method.
+    line_search_options : dict, LineSearchTool or None
+        Dictionary with line search options. See LineSearchTool class for details.
+    display : bool
+        If True, debug information is displayed during optimization.
+        Printing format is up to a student and is not checked in any way.
+    trace:  bool
+        If True, the progress information is appended into history dictionary during training.
+        Otherwise None is returned instead of history.
+
+    Returns
+    -------
+    x_star : np.array
+        The point found by the optimization procedure
+    message : string
+        'success' or the description of error:
+            - 'iterations_exceeded': if after max_iter iterations of the method x_k still doesn't satisfy
+              the stopping criterion.
+    history : dictionary of lists or None
+        Dictionary containing the progress information or None if trace=False.
+        Dictionary has to be organized as follows:
+            - history['func'] : list of function values f(x_k) on every step of the algorithm
+            - history['time'] : list of floats, containing time in seconds passed from the start of the method
+            - history['grad_norm'] : list of values Euclidian norms ||g(x_k)|| of the gradient
+                on every step of the algorithm
+            - history['x'] : list of np.arrays, containing the trajectory of the algorithm. ONLY STORE IF x.size <= 2
+    """
+    history = defaultdict(list) if trace else None
+    line_search_tool = get_line_search_tool(line_search_options)
+    x_k = np.copy(x_0)
+
+    # TODO: Implement L-BFGS method.
+    # Use line_search_tool.line_search() for adaptive step size.
+    def _update_history():
+        if not trace:
+            return
+        history['func'].append(oracle.func(x_k))
+        history['time'].append((datetime.now() - t_0).seconds)
+        history['grad_norm'].append(grad_k_norm)
+        if x_len <= 2:
+            history['x'].append(np.copy(x_k))
+
+    def show_display():
+        if not display:
+            return
+        if len(x_k) <= 4:
+            print('x = {}, '.format(np.round(x_k, 4)), end='')
+        print('func= {}, grad_norm = {}'.format(np.round(oracle.func(x_k), 4), np.round(grad_k_norm, 4)))
+
+    t_0 = datetime.now()
+    x_len = len(x_k)
+    message = 'success'
+
+    grad_k = oracle.grad(x_k)
+    grad_0_norm = grad_k_norm = np.linalg.norm(grad_k)
+
+    def bfgs_multiply(v, H, gamma_0):
+        if len(H) == 0:
+            return gamma_0 * v
+        s, y = H[-1]
+        H = H[:-1]
+        v_new = v - (s @ v) / (y @ s) * y
+        z = bfgs_multiply(v_new, H, gamma_0)
+        result = z + (s @ v - y @ z) / (y @ s) * s
+        return result
+
+    def bfgs_direction():
+        if len(H) == 0:
+            return -grad_k
+        s, y = H[-1]
+        gamma_0 = (y @ s) / (y @ y)
+        return bfgs_multiply(-grad_k, H, gamma_0)
+
+    H = []
+    for k in range(max_iter):
+        show_display()
+        _update_history()
+
+        d = bfgs_direction()
+        alpha = line_search_tool.line_search(oracle, x_k, d)
+        x_new = x_k + alpha * d
+        grad_new = oracle.grad(x_new)
+        H.append((x_new - x_k, grad_new - grad_k))
+        if len(H) > memory_size:
+            H = H[1:]
+        x_k, grad_k = x_new, grad_new
+        grad_k_norm = np.linalg.norm(grad_k)
+        if grad_k_norm ** 2 < tolerance * grad_0_norm ** 2:
+            break
+
+    show_display()
+    _update_history()
+
+    if not grad_k_norm ** 2 < tolerance * grad_0_norm ** 2:
+        message = 'iterations_exceeded'
+
+    return x_k, message, history
         
 
 #######################################################
